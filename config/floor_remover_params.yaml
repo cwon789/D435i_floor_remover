@@ -1,0 +1,69 @@
+floor_remover_node:
+  ros__parameters:
+    # ====================
+    # Topic Configuration
+    # ====================
+    input_cloud_topic: "/camera/depth/color/points"
+    input_imu_topic: "/camera/imu"
+    output_cloud_topic: "/floor_removed_cloud"
+    floor_cloud_topic: "/floor_cloud"
+    gravity_marker_topic: "/gravity_vector"
+
+    # ====================
+    # Distance Filtering
+    # ====================
+    # D435i 유효 범위: 0.3m - 10m (실내 권장: 0.3 - 5.0m)
+    min_distance: 0.1  # meters
+    max_distance: 3.0  # meters
+
+    # ====================
+    # Voxel Downsampling
+    # ====================
+    # 작을수록 디테일 증가, 처리 속도 감소
+    # 권장 범위: 0.005 - 0.02m
+    voxel_leaf_size: 0.01  # 2cm voxels
+
+    # ====================
+    # RANSAC Plane Detection
+    # ====================
+    # Plane inlier distance threshold
+    plane_distance_threshold: 0.01  # 1.5cm tolerance
+
+    # RANSAC maximum iterations
+    plane_max_iterations: 300
+
+    # ====================
+    # IMU Configuration
+    # ====================
+    # IMU 샘플 버퍼 크기 (중력 방향 추정용)
+    imu_buffer_size: 50
+
+    # IMU 기반 바닥 검증 사용 여부
+    # true: IMU 중력벡터로 바닥 검증 (물리적으로 정확)
+    # false: 고정 벡터 [0, -1, 0] 사용
+    use_imu_for_validation: true
+
+    # 중력 벡터 Low-pass 필터 alpha 값
+    # alpha = 새 값 반영 비율 (0.0 - 1.0)
+    # 높을수록: 빠른 응답, 노이즈 많음
+    # 낮을수록: 느린 응답, 안정적
+    # 권장: 0.2 - 0.4
+    gravity_filter_alpha: 0.3
+
+    # ====================
+    # Floor Validation
+    # ====================
+    # 바닥으로부터 최대 높이 (이상은 천장/노이즈로 제거)
+    max_height_threshold: 2.0  # meters
+
+    # 바닥 normal 정렬 threshold (IMU 중력벡터 또는 고정벡터와 비교)
+    # 값 = cos(θ), θ는 벡터 간 각도
+    #
+    # 예시:
+    #   1.0  = 0°   (완벽한 수평 바닥)
+    #   0.87 = 30°  (30도까지 기울어진 바닥 허용)
+    #   0.7  = 45°  (45도까지 허용)
+    #   0.5  = 60°  (60도까지 허용)
+    #
+    # 권장: 0.85-0.90 (안정적인 바닥 감지)
+    floor_normal_alignment_threshold: 0.95
