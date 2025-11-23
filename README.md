@@ -3,13 +3,7 @@
 ROS2 Foxy package for detecting and removing floor planes from Intel RealSense D435i point clouds using IMU-assisted plane segmentation.
 
 ## Demo
-
-<!-- TODO: Add demo video/gif here -->
-<!-- Example formats:
-![Demo](docs/demo.gif)
-or for videos:
-https://github.com/user-attachments/assets/your-video-id.mp4
--->
+https://github.com/user-attachments/assets/977a5156-5b6f-4e28-b159-7265a261a2d5
 
 ## Key Features
 
@@ -524,3 +518,4 @@ Jay (Won Young Chung)
 - [Point Cloud Library (PCL) RANSAC](https://pointclouds.org/documentation/tutorials/random_sample_consensus.html)
 - [ROS2 Foxy Documentation](https://docs.ros.org/en/foxy/)
 - [PCL SACMODEL_PERPENDICULAR_PLANE](https://pointclouds.org/documentation/classpcl_1_1_sample_consensus_model_perpendicular_plane.html)
+
