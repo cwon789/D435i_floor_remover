@@ -2,6 +2,15 @@
 
 ROS2 Foxy package for detecting and removing floor planes from Intel RealSense D435i point clouds using IMU-assisted plane segmentation.
 
+## Demo
+
+<!-- TODO: Add demo video/gif here -->
+<!-- Example formats:
+![Demo](docs/demo.gif)
+or for videos:
+https://github.com/user-attachments/assets/your-video-id.mp4
+-->
+
 ## Key Features
 
 - **IMU-Based Floor Detection**: Estimates gravity vector from D435i's built-in IMU to guide floor plane detection
@@ -507,7 +516,7 @@ MIT License
 
 ## Author
 
-Jay
+Jay (Won Young Chung)
 
 ## References
 
