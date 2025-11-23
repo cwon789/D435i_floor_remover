@@ -1,6 +1,8 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
+#include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <visualization_msgs/msg/marker.hpp>
 #include <pcl_conversions/pcl_conversions.h>
 
@@ -28,10 +30,17 @@ public:
       input_imu_topic_, 10,
       std::bind(&FloorRemoverNode::imuCallback, this, std::placeholders::_1));
 
+    camera_info_sub_ = this->create_subscription<sensor_msgs::msg::CameraInfo>(
+      "/camera/depth/camera_info", 10,
+      std::bind(&FloorRemoverNode::cameraInfoCallback, this, std::placeholders::_1));
+
     // Create publishers
     cloud_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(output_cloud_topic_, 10);
     floor_pub_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(floor_cloud_topic_, 10);
     gravity_marker_pub_ = this->create_publisher<visualization_msgs::msg::Marker>(gravity_marker_topic_, 10);
+
+    floor_depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/floor_depth", 10);
+    floor_removed_depth_pub_ = this->create_publisher<sensor_msgs::msg::Image>("/floor_removed_depth", 10);
 
     RCLCPP_INFO(this->get_logger(), "Floor Remover Node initialized");
     RCLCPP_INFO(this->get_logger(), "Input cloud: %s", input_cloud_topic_.c_str());
@@ -97,6 +106,15 @@ private:
     floor_remover_->updateImu(msg);
   }
 
+  void cameraInfoCallback(const sensor_msgs::msg::CameraInfo::SharedPtr msg)
+  {
+    if (!camera_info_received_) {
+      camera_info_ = msg;
+      camera_info_received_ = true;
+      RCLCPP_INFO(this->get_logger(), "Camera info received: %dx%d", msg->width, msg->height);
+    }
+  }
+
   void cloudCallback(const sensor_msgs::msg::PointCloud2::SharedPtr msg)
   {
     // Convert ROS message to PCL
@@ -126,6 +144,11 @@ private:
     publishCloud(cloud_pub_, cloud_no_floor, msg->header);
     publishCloud(floor_pub_, cloud_floor, msg->header);
     publishGravityMarker(msg->header);
+
+    // Publish depth images from point clouds
+    if (camera_info_received_) {
+      publishDepthImages(cloud_floor, cloud_no_floor, msg->header);
+    }
   }
 
   void publishCloud(
@@ -177,15 +200,157 @@ private:
     gravity_marker_pub_->publish(marker);
   }
 
+  void publishDepthImages(
+    const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& floor_cloud,
+    const pcl::PointCloud<pcl::PointXYZRGB>::Ptr& no_floor_cloud,
+    const std_msgs::msg::Header& header)
+  {
+    if (!camera_info_received_) return;
+
+    const int width = camera_info_->width;
+    const int height = camera_info_->height;
+
+    // Get camera intrinsics
+    const double fx = camera_info_->k[0];
+    const double fy = camera_info_->k[4];
+    const double cx = camera_info_->k[2];
+    const double cy = camera_info_->k[5];
+
+    // Create depth images (16-bit, mm units)
+    std::vector<uint16_t> floor_depth(width * height, 0);
+    std::vector<uint16_t> floor_removed_depth(width * height, 0);
+
+    // Project floor points to depth image
+    for (const auto& point : floor_cloud->points) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+        continue;
+      if (point.z <= 0.0) continue;
+
+      int u = static_cast<int>(fx * point.x / point.z + cx);
+      int v = static_cast<int>(fy * point.y / point.z + cy);
+
+      if (u >= 0 && u < width && v >= 0 && v < height) {
+        uint16_t depth_mm = static_cast<uint16_t>(point.z * 1000.0);
+        floor_depth[v * width + u] = depth_mm;
+      }
+    }
+
+    // Project no-floor points to depth image
+    for (const auto& point : no_floor_cloud->points) {
+      if (!std::isfinite(point.x) || !std::isfinite(point.y) || !std::isfinite(point.z))
+        continue;
+      if (point.z <= 0.0) continue;
+
+      int u = static_cast<int>(fx * point.x / point.z + cx);
+      int v = static_cast<int>(fy * point.y / point.z + cy);
+
+      if (u >= 0 && u < width && v >= 0 && v < height) {
+        uint16_t depth_mm = static_cast<uint16_t>(point.z * 1000.0);
+        floor_removed_depth[v * width + u] = depth_mm;
+      }
+    }
+
+    // Apply interpolation multiple times to fill holes (3 iterations)
+    for (int iter = 0; iter < 3; ++iter) {
+      interpolateDepth(floor_depth, width, height);
+      interpolateDepth(floor_removed_depth, width, height);
+    }
+
+    // Convert to ROS messages
+    sensor_msgs::msg::Image floor_depth_msg;
+    sensor_msgs::msg::Image floor_removed_depth_msg;
+
+    floor_depth_msg.header = header;
+    floor_depth_msg.height = height;
+    floor_depth_msg.width = width;
+    floor_depth_msg.encoding = "16UC1";
+    floor_depth_msg.is_bigendian = 0;
+    floor_depth_msg.step = width * 2;
+    floor_depth_msg.data.resize(width * height * 2);
+
+    floor_removed_depth_msg.header = header;
+    floor_removed_depth_msg.height = height;
+    floor_removed_depth_msg.width = width;
+    floor_removed_depth_msg.encoding = "16UC1";
+    floor_removed_depth_msg.is_bigendian = 0;
+    floor_removed_depth_msg.step = width * 2;
+    floor_removed_depth_msg.data.resize(width * height * 2);
+
+    for (size_t i = 0; i < static_cast<size_t>(width * height); ++i) {
+      floor_depth_msg.data[i * 2] = floor_depth[i] & 0xFF;
+      floor_depth_msg.data[i * 2 + 1] = (floor_depth[i] >> 8) & 0xFF;
+
+      floor_removed_depth_msg.data[i * 2] = floor_removed_depth[i] & 0xFF;
+      floor_removed_depth_msg.data[i * 2 + 1] = (floor_removed_depth[i] >> 8) & 0xFF;
+    }
+
+    floor_depth_pub_->publish(floor_depth_msg);
+    floor_removed_depth_pub_->publish(floor_removed_depth_msg);
+  }
+
+  void interpolateDepth(std::vector<uint16_t>& depth, int width, int height)
+  {
+    // Fast conditional interpolation with 3x3 kernel
+    // Only interpolate pixels with at least 2 valid neighbors
+    std::vector<uint16_t> output = depth;
+
+    for (int v = 1; v < height - 1; ++v) {  // Skip borders for speed
+      for (int u = 1; u < width - 1; ++u) {
+        int idx = v * width + u;
+
+        if (depth[idx] == 0) {
+          // Check 3x3 neighborhood
+          int sum = 0;
+          int count = 0;
+
+          // Unrolled 3x3 kernel for speed
+          int nw = depth[(v-1) * width + (u-1)];
+          int n  = depth[(v-1) * width + u];
+          int ne = depth[(v-1) * width + (u+1)];
+          int w  = depth[v * width + (u-1)];
+          int e  = depth[v * width + (u+1)];
+          int sw = depth[(v+1) * width + (u-1)];
+          int s  = depth[(v+1) * width + u];
+          int se = depth[(v+1) * width + (u+1)];
+
+          if (nw > 0) { sum += nw; count++; }
+          if (n  > 0) { sum += n;  count++; }
+          if (ne > 0) { sum += ne; count++; }
+          if (w  > 0) { sum += w;  count++; }
+          if (e  > 0) { sum += e;  count++; }
+          if (sw > 0) { sum += sw; count++; }
+          if (s  > 0) { sum += s;  count++; }
+          if (se > 0) { sum += se; count++; }
+
+          // Only interpolate if we have at least 2 neighbors
+          if (count >= 2) {
+            output[idx] = sum / count;
+          }
+        }
+      }
+    }
+
+    depth = output;
+  }
+
   // Floor remover core
   std::unique_ptr<floor_remover::FloorRemover> floor_remover_;
 
   // ROS communication
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_sub_;
   rclcpp::Subscription<sensor_msgs::msg::Imu>::SharedPtr imu_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_sub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr cloud_pub_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr floor_pub_;
   rclcpp::Publisher<visualization_msgs::msg::Marker>::SharedPtr gravity_marker_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr floor_depth_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr floor_removed_depth_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr floor_depth_color_pub_;
+  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr floor_removed_depth_color_pub_;
+
+  // Camera info
+  sensor_msgs::msg::CameraInfo::SharedPtr camera_info_;
+  bool camera_info_received_ = false;
 
   // Parameters
   std::string input_cloud_topic_;

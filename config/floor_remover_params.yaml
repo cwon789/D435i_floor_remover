@@ -19,9 +19,9 @@ floor_remover_node:
     # ====================
     # Voxel Downsampling
     # ====================
-    # 작을수록 디테일 증가, 처리 속도 감소
+    # 작을수록 디테일 증가, 처리 속도 느려짐
     # 권장 범위: 0.005 - 0.02m
-    voxel_leaf_size: 0.01  # 2cm voxels
+    voxel_leaf_size: 0.005 
 
     # ====================
     # RANSAC Plane Detection
