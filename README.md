@@ -154,6 +154,20 @@ sudo apt install libeigen3-dev
 sudo apt install ros-foxy-realsense2-camera
 ```
 
+## Prerequisites
+
+Before using this package, you need to configure the RealSense camera settings:
+
+**Important:** Copy the D435i configuration file to the RealSense ROS2 package:
+
+```bash
+# Copy the d435i.yaml configuration file
+cp src/D435i_floor_remover/config/d435i.yaml \
+   src/realsense-ros/realsense2_camera/config/d435i.yaml
+```
+
+This configuration file must be placed in `realsense2_camera/config/d435i.yaml` to ensure proper camera initialization with the correct parameters for floor removal.
+
 ## Installation & Build
 
 ```bash
@@ -271,6 +285,24 @@ File: [config/floor_remover_params.yaml](config/floor_remover_params.yaml)
 
 **Recommended:** 0.90-0.95 (stable floor detection)
 
+### Pointcloud to Depth Image Projection
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `depth_image_projection` | true | Enable/disable depth image projection from pointcloud |
+| `depth_interpolation_iterations` | 3 | Number of interpolation iterations to fill holes |
+| `min_neighbors_for_interpolation` | 2 | Minimum valid neighbors required for interpolation |
+
+**Warning:** Depth image projection is resource-intensive and may impact performance.
+
+**Performance Impact:**
+- Set `depth_image_projection: false` to disable depth image publishing and save computational resources
+- Useful when you only need pointcloud output
+
+**Interpolation Parameters:**
+- `depth_interpolation_iterations`: Higher values fill more holes but may introduce artifacts (recommended: 1-5)
+- `min_neighbors_for_interpolation`: Higher values are more conservative, fewer artifacts but more holes remain (range: 1-8)
+
 ## Tuning Guide
 
 ### For Better Accuracy
@@ -288,6 +320,7 @@ floor_normal_alignment_threshold: 0.95  # Stricter alignment requirement
 voxel_leaf_size: 0.02               # Larger voxels
 plane_max_iterations: 100           # Fewer iterations
 use_imu_for_validation: true        # IMU mode required
+depth_image_projection: false       # Disable depth image projection to save resources
 ```
 
 ### For Uneven Floors
@@ -331,6 +364,16 @@ gravity_filter_alpha: 0.2           # More stable gravity estimation
 - **`gravity_marker_topic`** (visualization_msgs/Marker)
   - Visualizes current estimated gravity vector as arrow
   - Red arrow (length: 0.02m)
+
+- **`/floor_depth`** (sensor_msgs/Image)
+  - Depth image projected from floor-only pointcloud
+  - Encoding: 16UC1 (16-bit unsigned, millimeters)
+  - Published only when `depth_image_projection: true`
+
+- **`/floor_removed_depth`** (sensor_msgs/Image)
+  - Depth image projected from floor-removed pointcloud
+  - Encoding: 16UC1 (16-bit unsigned, millimeters)
+  - Published only when `depth_image_projection: true`
 
 ## Performance
 

@@ -9,61 +9,94 @@ floor_remover_node:
     floor_cloud_topic: "/floor_cloud"
     gravity_marker_topic: "/gravity_vector"
 
-    # ====================
+    # ========================================
+    # Point Cloud Preprocessing
+    # ========================================
+
     # Distance Filtering
-    # ====================
-    # D435i 유효 범위: 0.3m - 10m (실내 권장: 0.3 - 5.0m)
+    # D435i effective range: 0.3m - 10m (indoor recommended: 0.3 - 5.0m)
     min_distance: 0.1  # meters
     max_distance: 3.0  # meters
 
-    # ====================
     # Voxel Downsampling
-    # ====================
-    # 작을수록 디테일 증가, 처리 속도 느려짐
-    # 권장 범위: 0.005 - 0.02m
-    voxel_leaf_size: 0.005 
+    # Smaller values: higher detail, slower processing
+    # Recommended range: 0.005 - 0.02m
+    voxel_leaf_size: 0.005  # meters
 
-    # ====================
-    # RANSAC Plane Detection
-    # ====================
+    # ========================================
+    # Floor Plane Detection (RANSAC)
+    # ========================================
+
     # Plane inlier distance threshold
-    plane_distance_threshold: 0.01  # 1.5cm tolerance
+    # Points within this distance from the plane are considered inliers
+    plane_distance_threshold: 0.015  # meters (1.5cm tolerance)
 
     # RANSAC maximum iterations
+    # Higher values: more accurate but slower
     plane_max_iterations: 300
 
-    # ====================
-    # IMU Configuration
-    # ====================
-    # IMU 샘플 버퍼 크기 (중력 방향 추정용)
-    imu_buffer_size: 50
+    # ========================================
+    # IMU-Based Floor Validation
+    # ========================================
 
-    # IMU 기반 바닥 검증 사용 여부
-    # true: IMU 중력벡터로 바닥 검증 (물리적으로 정확)
-    # false: 고정 벡터 [0, -1, 0] 사용
+    # Enable IMU-based floor validation
+    # true: Validate floor using IMU gravity vector (physically accurate)
+    # false: Use fixed vector [0, -1, 0]
     use_imu_for_validation: true
 
-    # 중력 벡터 Low-pass 필터 alpha 값
-    # alpha = 새 값 반영 비율 (0.0 - 1.0)
-    # 높을수록: 빠른 응답, 노이즈 많음
-    # 낮을수록: 느린 응답, 안정적
-    # 권장: 0.2 - 0.4
+    # IMU sample buffer size (for gravity direction estimation)
+    imu_buffer_size: 50
+
+    # Gravity vector low-pass filter alpha value
+    # alpha = new value reflection ratio (0.0 - 1.0)
+    # Higher values: faster response, more noise
+    # Lower values: slower response, more stable
+    # Recommended: 0.2 - 0.4
     gravity_filter_alpha: 0.3
 
-    # ====================
-    # Floor Validation
-    # ====================
-    # 바닥으로부터 최대 높이 (이상은 천장/노이즈로 제거)
+    # Floor normal alignment threshold (compared with IMU gravity vector or fixed vector)
+    # Value = cos(θ), where θ is the angle between vectors
+    #
+    # Examples:
+    #   1.0  = 0°   (perfect horizontal floor)
+    #   0.87 = 30°  (allows floors tilted up to 30 degrees)
+    #   0.7  = 45°  (allows up to 45 degrees)
+    #   0.5  = 60°  (allows up to 60 degrees)
+    #
+    # Recommended: 0.85-0.90 (stable floor detection)
+    floor_normal_alignment_threshold: 0.95
+
+    # ========================================
+    # Floor Removal Settings
+    # ========================================
+
+    # Maximum height from floor (above this is removed as ceiling/noise)
     max_height_threshold: 2.0  # meters
 
-    # 바닥 normal 정렬 threshold (IMU 중력벡터 또는 고정벡터와 비교)
-    # 값 = cos(θ), θ는 벡터 간 각도
-    #
-    # 예시:
-    #   1.0  = 0°   (완벽한 수평 바닥)
-    #   0.87 = 30°  (30도까지 기울어진 바닥 허용)
-    #   0.7  = 45°  (45도까지 허용)
-    #   0.5  = 60°  (60도까지 허용)
-    #
-    # 권장: 0.85-0.90 (안정적인 바닥 감지)
-    floor_normal_alignment_threshold: 0.95
+    # Additional upward removal margin from detected floor plane
+    # Points within this distance above the floor will also be removed
+    # Useful for removing small objects or noise just above the floor
+    # Example: 0.05 = remove points up to 5cm above the detected floor
+    # Recommended range: 0.0 - 0.1m
+    additional_removal_margin: 0.0  # meters (0 = disabled)
+
+    # ========================================
+    # Depth Image Projection (Optional)
+    # ========================================
+
+    # Enable depth image projection from pointcloud
+    # Warning: This feature is resource-intensive and may impact performance
+    # Set to false to disable depth image publishing and save computational resources
+    depth_image_projection: true
+
+    # Number of interpolation iterations to fill holes in projected depth image
+    # Higher values: more holes filled, but may introduce artifacts
+    # Recommended range: 1-5
+    depth_interpolation_iterations: 3
+
+    # Minimum number of valid neighbors required for interpolation
+    # Used in 3x3 kernel neighborhood interpolation
+    # Higher values: more conservative (fewer artifacts, more holes remain)
+    # Lower values: more aggressive (fewer holes, possible artifacts)
+    # Range: 1-8 (max neighbors in 3x3 kernel)
+    min_neighbors_for_interpolation: 2

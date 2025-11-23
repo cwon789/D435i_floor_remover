@@ -33,6 +33,7 @@ public:
   void setUseImuForValidation(bool use) { use_imu_for_validation_ = use; }
   void setImuBufferSize(int size) { imu_buffer_size_ = size; }
   void setGravityFilterAlpha(double alpha) { gravity_filter_alpha_ = alpha; }
+  void setAdditionalRemovalMargin(double margin) { additional_removal_margin_ = margin; }
 
   // IMU update
   void updateImu(const sensor_msgs::msg::Imu::SharedPtr& msg);
@@ -73,6 +74,7 @@ private:
   bool use_imu_for_validation_{true};
   int imu_buffer_size_{50};
   double gravity_filter_alpha_{0.3};
+  double additional_removal_margin_{0.0};
 
   // State
   std::deque<sensor_msgs::msg::Imu::SharedPtr> imu_buffer_;

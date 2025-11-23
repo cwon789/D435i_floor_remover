@@ -210,9 +210,14 @@ void FloorRemover::removeFloorPlane(
                       plane_coeffs[2] * point.z +
                       plane_coeffs[3];
 
+    // Check if point is within floor threshold (including additional margin)
     if (std::abs(distance) < plane_distance_threshold_) {
       floor_out->points.push_back(point);
-    } else if (distance > 0 && distance < max_height_threshold_) {
+    } else if (distance > 0 && distance < additional_removal_margin_) {
+      // Points above floor within additional margin are also removed
+      floor_out->points.push_back(point);
+    } else if (distance >= additional_removal_margin_ && distance < max_height_threshold_) {
+      // Points above the additional margin are kept
       cloud_out->points.push_back(point);
     }
   }

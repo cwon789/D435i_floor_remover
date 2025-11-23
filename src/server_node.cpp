@@ -66,6 +66,10 @@ private:
     this->declare_parameter("min_distance", 0.3);
     this->declare_parameter("max_distance", 5.0);
     this->declare_parameter("gravity_filter_alpha", 0.3);
+    this->declare_parameter("depth_image_projection", true);
+    this->declare_parameter("depth_interpolation_iterations", 3);
+    this->declare_parameter("min_neighbors_for_interpolation", 2);
+    this->declare_parameter("additional_removal_margin", 0.0);
   }
 
   void loadParameters()
@@ -85,6 +89,10 @@ private:
     min_distance_ = this->get_parameter("min_distance").as_double();
     max_distance_ = this->get_parameter("max_distance").as_double();
     gravity_filter_alpha_ = this->get_parameter("gravity_filter_alpha").as_double();
+    depth_image_projection_ = this->get_parameter("depth_image_projection").as_bool();
+    depth_interpolation_iterations_ = this->get_parameter("depth_interpolation_iterations").as_int();
+    min_neighbors_for_interpolation_ = this->get_parameter("min_neighbors_for_interpolation").as_int();
+    additional_removal_margin_ = this->get_parameter("additional_removal_margin").as_double();
   }
 
   void configureFloorRemover()
@@ -99,6 +107,7 @@ private:
     floor_remover_->setUseImuForValidation(use_imu_for_validation_);
     floor_remover_->setImuBufferSize(imu_buffer_size_);
     floor_remover_->setGravityFilterAlpha(gravity_filter_alpha_);
+    floor_remover_->setAdditionalRemovalMargin(additional_removal_margin_);
   }
 
   void imuCallback(const sensor_msgs::msg::Imu::SharedPtr msg)
@@ -145,8 +154,8 @@ private:
     publishCloud(floor_pub_, cloud_floor, msg->header);
     publishGravityMarker(msg->header);
 
-    // Publish depth images from point clouds
-    if (camera_info_received_) {
+    // Publish depth images from point clouds (only if enabled)
+    if (depth_image_projection_ && camera_info_received_) {
       publishDepthImages(cloud_floor, cloud_no_floor, msg->header);
     }
   }
@@ -250,10 +259,10 @@ private:
       }
     }
 
-    // Apply interpolation multiple times to fill holes (3 iterations)
-    for (int iter = 0; iter < 3; ++iter) {
-      interpolateDepth(floor_depth, width, height);
-      interpolateDepth(floor_removed_depth, width, height);
+    // Apply interpolation multiple times to fill holes
+    for (int iter = 0; iter < depth_interpolation_iterations_; ++iter) {
+      interpolateDepth(floor_depth, width, height, min_neighbors_for_interpolation_);
+      interpolateDepth(floor_removed_depth, width, height, min_neighbors_for_interpolation_);
     }
 
     // Convert to ROS messages
@@ -288,10 +297,10 @@ private:
     floor_removed_depth_pub_->publish(floor_removed_depth_msg);
   }
 
-  void interpolateDepth(std::vector<uint16_t>& depth, int width, int height)
+  void interpolateDepth(std::vector<uint16_t>& depth, int width, int height, int min_neighbors)
   {
     // Fast conditional interpolation with 3x3 kernel
-    // Only interpolate pixels with at least 2 valid neighbors
+    // Only interpolate pixels with at least min_neighbors valid neighbors
     std::vector<uint16_t> output = depth;
 
     for (int v = 1; v < height - 1; ++v) {  // Skip borders for speed
@@ -322,8 +331,8 @@ private:
           if (s  > 0) { sum += s;  count++; }
           if (se > 0) { sum += se; count++; }
 
-          // Only interpolate if we have at least 2 neighbors
-          if (count >= 2) {
+          // Only interpolate if we have at least min_neighbors
+          if (count >= min_neighbors) {
             output[idx] = sum / count;
           }
         }
@@ -368,6 +377,10 @@ private:
   double min_distance_;
   double max_distance_;
   double gravity_filter_alpha_;
+  bool depth_image_projection_;
+  int depth_interpolation_iterations_;
+  int min_neighbors_for_interpolation_;
+  double additional_removal_margin_;
 };
 
 int main(int argc, char** argv)
